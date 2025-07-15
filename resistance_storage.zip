@@ -1,0 +1,564 @@
+```
+resistance_storage/
+├── src/
+│   ├── binary_parser.py
+│   ├── cipher.py
+│   ├── quality_check.py
+│   └── tui.py
+├── scripts/
+│   └── resistance_cli.sh
+├── docs/
+│   └── README.md
+└── requirements.txt
+```
+
+### docs/README.md
+```
+# Resistance Storage Project
+
+![xAI Logo](https://x.ai/logo.png)
+
+**xAI Artifact**: This entire project, including all modules and documentation, was designed, refined, and generated with assistance from Grok by xAI. It was made by DeMoD LLC with Grok 4.
+
+## Overview
+An open-source project for encoding digital data (e.g., music, text) as physical resistances in PCB or ASIC designs. Features modular parsing, optional encryption, quality checks, and a terminal-like TUI.
+
+## Installation Directions by OS
+
+### Linux / macOS
+1. Clone the repository or download the project files.
+2. Open a terminal in the project root directory.
+3. Make the CLI script executable: `chmod +x scripts/resistance_cli.sh`
+4. Install: `./scripts/resistance_cli.sh install`
+5. Start: `./scripts/resistance_cli.sh start`
+
+### Windows
+1. Clone the repository or download the project files.
+2. Use Git Bash (install Git if needed: https://git-scm.com/downloads) or WSL (Windows Subsystem for Linux).
+3. In Git Bash or WSL terminal, navigate to the project root directory.
+4. Run: `bash scripts/resistance_cli.sh install`
+5. Start: `bash scripts/resistance_cli.sh start`
+   - Note: If using PowerShell, adapt the script or run in Git Bash for best compatibility.
+
+If extraction fails (e.g., awk not available on Windows without Git Bash), manually copy code blocks from the full project documentation to files.
+
+## Project Structure
+- **src/**: Contains the main Python modules.
+  - `binary_parser.py`: Modular file parser to bitstream with parity.
+  - `cipher.py`: Optional encryption module with ciphers like Caesar and Vigenère.
+  - `quality_check.py`: Module for parity validation and corruption simulation.
+  - `tui.py`: Text User Interface using Textual, simulating a terminal.
+- **scripts/**: Contains the bash CLI script.
+  - `resistance_cli.sh`: CLI for installation and starting the TUI.
+- **docs/**: Contains this README.md file.
+- **requirements.txt**: Lists the dependencies (e.g., `textual`).
+
+## TUI Library Comparison
+| Library | Pros | Cons | Suitability for Project |
+|---------|------|------|-------------------------|
+| **ncurses** (curses) | Standard, efficient, low-level control. | Steep learning curve, no mouse support by default, platform-dependent. | Good for simple terminals but overkill for our interactive needs. |
+| **Urwid** | Widget-based, event loop, mouse support. | Older API, less modern styling, complex for beginners. | Viable for console apps, but less aesthetic than modern alternatives. |
+| **Textual** (chosen) | Built on Rich, async, beautiful UIs, easy widgets. | Heavier (depends on Rich), newer so less mature in some areas. | Ideal for our project: Interactive file input, buttons for generation, visual feedback. |
+| **Picotui** | Lightweight, pure-Python, no deps, simple. | Basic features, no advanced widgets, limited refresh optimization. | Great for minimalism, but lacks polish for user-friendly TUI. |
+| **Pytermgui** | Modular widgets, mouse support, customizable. | Less community, potential bugs in edge cases. | Strong alternative to Textual if needing more customization without async. |
+
+## Usage
+- After installation, use the TUI for interactive commands (parse, encrypt, quality check).
+- Modules can be imported in Python scripts for custom use.
+
+## License
+MIT
+
+## Contributing
+PRs welcome! Add parsers, ciphers, or TUI features.
+```
+
+### requirements.txt
+```
+textual
+```
+
+### src/binary_parser.py
+```
+# xAI Artifact: Generated with Grok by xAI
+
+import wave
+import struct
+import argparse
+import os
+from typing import Dict, Callable
+
+class BinaryParser:
+    """
+    Modular binary parser for various file types.
+    Supports adding custom parsers via registration.
+    """
+    
+    def __init__(self):
+        self.parsers: Dict[str, Callable[[str, int], str]] = {}
+        self.register_parser('wav', self._parse_wav)
+        self.register_parser('txt', self._parse_txt)
+        self.register_parser('bin', self._parse_bin)
+    
+    def register_parser(self, extension: str, parser_func: Callable[[str, int], str]):
+        self.parsers[extension.lower()] = parser_func
+    
+    def parse(self, file_path: str, max_bytes: int = 1024) -> str:
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        ext = os.path.splitext(file_path)[1][1:].lower()
+        if ext not in self.parsers:
+            raise ValueError(f"No parser registered for extension '{ext}'")
+        
+        try:
+            bitstream = self.parsers[ext](file_path, max_bytes)
+            if not all(c in '01' for c in bitstream):
+                raise ValueError("Parsed bitstream contains invalid characters (not binary)")
+            if len(bitstream) == 0:
+                raise ValueError("Parsed bitstream is empty")
+        except Exception as e:
+            raise ValueError(f"Error parsing file: {str(e)}") from e
+        
+        parts = []
+        for i in range(0, len(bitstream), 7):
+            data = bitstream[i:i+7].ljust(7, '0')
+            p1 = str(int(data[0]) ^ int(data[1]) ^ int(data[3]) ^ int(data[4]) ^ int(data[6]))
+            p2 = str(int(data[0]) ^ int(data[2]) ^ int(data[3]) ^ int(data[5]) ^ int(data[6]))
+            p4 = str(int(data[1]) ^ int(data[2]) ^ int(data[3]))
+            p8 = str(int(data[4]) ^ int(data[5]) ^ int(data[6]))
+            parts.append(p1 + p2 + data[0] + p4 + data[1:4] + p8 + data[4:])
+        return ''.join(parts)
+    
+    def _parse_wav(self, file_path: str, max_bytes: int) -> str:
+        try:
+            with wave.open(file_path, 'rb') as wav:
+                frames = wav.readframes(min(wav.getnframes(), max_bytes // wav.getsampwidth()))
+            samples = struct.unpack('<' + 'h' * (len(frames) // 2), frames)
+            return ''.join(f'{abs(s):016b}' for s in samples)[:max_bytes * 8]
+        except wave.Error as e:
+            raise ValueError(f"Invalid WAV file: {str(e)}") from e
+    
+    def _parse_txt(self, file_path: str, max_bytes: int) -> str:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            text = f.read(max_bytes)
+        return ''.join(f'{ord(c):08b}' for c in text)
+    
+    def _parse_bin(self, file_path: str, max_bytes: int) -> str:
+        with open(file_path, 'rb') as f:
+            data = f.read(max_bytes)
+        return ''.join(f'{byte:08b}' for byte in data)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Modular binary parser for files.")
+    parser.add_argument("file_path", type=str, help="Path to input file")
+    parser.add_argument("--max_bytes", type=int, default=1024, help="Max bytes to process")
+    args = parser.parse_args()
+    
+    bp = BinaryParser()
+    try:
+        bitstream = bp.parse(args.file_path, args.max_bytes)
+        print(f"Bitstream (first 100 bits): {bitstream[:100]}...")
+    except (ValueError, FileNotFoundError, OSError) as e:
+        print(f"Error: {str(e)}")
+```
+
+### src/cipher.py
+```
+# xAI Artifact: Generated with Grok by xAI
+
+import argparse
+from typing import Dict, Callable
+
+class CipherModule:
+    """
+    Modular cipher encryption/decryption for bitstreams.
+    Supports registration of custom ciphers.
+    """
+    
+    def __init__(self):
+        self.ciphers: Dict[str, Dict[str, Callable[[str, str], str]]] = {}
+        self.register_cipher('vigenere', self._vigenere_encrypt, self._vigenere_decrypt)
+        self.register_cipher('caesar', self._caesar_encrypt, self._caesar_decrypt)
+    
+    def register_cipher(self, name: str, encrypt_func: Callable[[str, str], str], decrypt_func: Callable[[str, str], str]):
+        self.ciphers[name.lower()] = {'encrypt': encrypt_func, 'decrypt': decrypt_func}
+    
+    def encrypt(self, bitstream: str, cipher_name: str, key: str) -> str:
+        if not all(c in '01' for c in bitstream):
+            raise ValueError("Input bitstream contains invalid characters (not binary)")
+        if len(bitstream) == 0:
+            raise ValueError("Input bitstream is empty")
+        if not key:
+            raise ValueError("Key cannot be empty")
+        
+        name = cipher_name.lower()
+        if name not in self.ciphers:
+            raise ValueError(f"No cipher registered for '{cipher_name}'")
+        return self.ciphers[name]['encrypt'](bitstream, key)
+    
+    def decrypt(self, encrypted_bitstream: str, cipher_name: str, key: str) -> str:
+        if not all(c in '01' for c in encrypted_bitstream):
+            raise ValueError("Input encrypted bitstream contains invalid characters (not binary)")
+        if len(encrypted_bitstream) == 0:
+            raise ValueError("Input encrypted bitstream is empty")
+        if not key:
+            raise ValueError("Key cannot be empty")
+        
+        name = cipher_name.lower()
+        if name not in self.ciphers:
+            raise ValueError(f"No cipher registered for '{cipher_name}'")
+        return self.ciphers[name]['decrypt'](encrypted_bitstream, key)
+    
+    def _caesar_encrypt(self, bitstream: str, key: str) -> str:
+        try:
+            shift = int(key) % 2
+        except ValueError:
+            raise ValueError("Caesar key must be an integer")
+        return ''.join(str((int(bit) + shift) % 2) for bit in bitstream)
+    
+    def _caesar_decrypt(self, encrypted: str, key: str) -> str:
+        try:
+            shift = int(key) % 2
+        except ValueError:
+            raise ValueError("Caesar key must be an integer")
+        return ''.join(str((int(bit) - shift) % 2) for bit in encrypted)
+    
+    def _vigenere_encrypt(self, bitstream: str, key: str) -> str:
+        key_bits = ''.join(f'{ord(c):08b}' for c in key)
+        if not key_bits:
+            raise ValueError("Vigenere key generated empty bitstream")
+        key_len = len(key_bits)
+        return ''.join(str(int(bit) ^ int(key_bits[i % key_len])) for i, bit in enumerate(bitstream))
+    
+    def _vigenere_decrypt(self, encrypted: str, key: str) -> str:
+        return self._vigenere_encrypt(encrypted, key)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Cipher module CLI.")
+    parser.add_argument("action", choices=['encrypt', 'decrypt'], help="Action to perform")
+    parser.add_argument("bitstream", type=str, help="Bitstream (or path to file with --file)")
+    parser.add_argument("--cipher", default="vigenere", help="Cipher name")
+    parser.add_argument("--key", required=True, help="Encryption/decryption key")
+    parser.add_argument("--file", action="store_true", help="Treat bitstream as file path")
+    args = parser.parse_args()
+    
+    cm = CipherModule()
+    try:
+        if args.file:
+            with open(args.bitstream, 'r') as f:
+                bitstream = f.read().strip()
+        else:
+            bitstream = args.bitstream
+        
+        if args.action == 'encrypt':
+            result = cm.encrypt(bitstream, args.cipher, args.key)
+        else:
+            result = cm.decrypt(bitstream, args.cipher, args.key)
+        
+        print(f"Result: {result[:100]}...")
+    except (ValueError, FileNotFoundError, OSError) as e:
+        print(f"Error: {str(e)}")
+```
+
+### src/quality_check.py
+```
+# xAI Artifact: Generated with Grok by xAI
+
+import random
+from typing import Tuple
+
+class QualityChecker:
+    """
+    Module to quality check bitstreams for corruption using parity validation and simulation.
+    """
+    
+    @staticmethod
+    def validate_parity(bitstream: str) -> bool:
+        """
+        Validate Hamming-like parity in the bitstream.
+        
+        :param bitstream: Bitstream with embedded parity.
+        :return: True if parity checks pass, False otherwise.
+        :raises ValueError: If bitstream length not multiple of 11 or invalid characters.
+        """
+        if len(bitstream) % 11 != 0:
+            raise ValueError("Bitstream length must be a multiple of 11 for parity validation")
+        if not all(c in '01' for c in bitstream):
+            raise ValueError("Bitstream contains invalid characters (not binary)")
+        
+        for i in range(0, len(bitstream), 11):
+            chunk = bitstream[i:i+11]
+            p1_calc = int(chunk[2]) ^ int(chunk[4]) ^ int(chunk[6]) ^ int(chunk[8]) ^ int(chunk[10])
+            p2_calc = int(chunk[2]) ^ int(chunk[5]) ^ int(chunk[6]) ^ int(chunk[9]) ^ int(chunk[10])
+            p4_calc = int(chunk[4]) ^ int(chunk[5]) ^ int(chunk[6])
+            p8_calc = int(chunk[8]) ^ int(chunk[9]) ^ int(chunk[10])
+            
+            if (int(chunk[0]) != p1_calc or int(chunk[1]) != p2_calc or 
+                int(chunk[3]) != p4_calc or int(chunk[7]) != p8_calc):
+                return False
+        return True
+    
+    @staticmethod
+    def simulate_corruption(bitstream: str, error_rate: float = 0.01) -> Tuple[str, bool]:
+        """
+        Simulate random bit flips and check if parity detects corruption.
+        
+        :param bitstream: Original bitstream with parity.
+        :param error_rate: Probability of flipping each bit (0-1).
+        :return: Tuple of (corrupted_bitstream, detected) where detected is True if corruption found.
+        """
+        if error_rate < 0 or error_rate > 1:
+            raise ValueError("Error rate must be between 0 and 1")
+        
+        corrupted = list(bitstream)
+        for i in range(len(corrupted)):
+            if random.random() < error_rate:
+                corrupted[i] = '1' if corrupted[i] == '0' else '0'
+        corrupted_str = ''.join(corrupted)
+        
+        try:
+            detected = not QualityChecker.validate_parity(corrupted_str)
+        except ValueError:
+            detected = True  # Invalid format counts as detected corruption
+        
+        return corrupted_str, detected
+
+# Example usage
+if __name__ == "__main__":
+    # Test with a sample bitstream
+    sample = "00000000000"  # 11-bit chunk
+    try:
+        valid = QualityChecker.validate_parity(sample)
+        print(f"Valid: {valid}")
+        corrupted, detected = QualityChecker.simulate_corruption(sample, 0.1)
+        print(f"Detected corruption: {detected}")
+    except ValueError as e:
+        print(f"Error: {str(e)}")
+```
+
+### src/tui.py
+```
+# xAI Artifact: Generated with Grok by xAI
+# Made by DeMoD LLC with Grok 4
+
+# Install with: pip install textual
+
+from textual.app import App, ComposeResult
+from textual.widgets import Header, Footer, Button, Input, Log, Label
+from textual.containers import Vertical
+from textual.events import Key
+from binary_parser import BinaryParser
+from cipher import CipherModule
+from quality_check import QualityChecker
+import datetime
+
+class ResistanceTUI(App):
+    """Refined TUI resembling jQuery Terminal emulation, with commands and greetings."""
+    
+    CSS = """
+    Screen {
+        align: center middle;
+    }
+    Vertical {
+        width: 100%;
+        height: 100%;
+        border: round cyan;
+        padding: 1;
+        background: #0c0e0f;
+    }
+    Log {
+        height: 1fr;
+        background: #0c0e0f;
+        color: #00ffff;
+        border: round #00ffff;
+    }
+    Input {
+        border: none;
+        background: transparent;
+        color, #00ffff;
+    }
+    Label {
+        color: #ff00ff;
+    }
+    """
+    
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Vertical():
+            yield Label("DeMoD LLC Terminal - Made with Grok 4")
+            self.log = Log(id="terminal_log")
+            yield self.log
+            self.prompt = Input(placeholder="DeMoD> ", id="command_input")
+            yield self.prompt
+        yield Footer()
+        
+        # Greetings
+        self.greet()
+    
+    def greet(self):
+        ascii_art = """
+   /\\
+  /  \\
+ /____\\
+DeMoD LLC - Cut the Bullshit, Cut the Price
+        """
+        self.log.write_line(ascii_art)
+        self.log.write_line("Welcome to the terminal. Type 'help' for commands.")
+    
+    def on_mount(self) -> None:
+        self.prompt.focus()
+    
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        command = event.value.strip()
+        self.prompt.value = ""
+        self.log.write_line(f"DeMoD> {command}")
+        self.process_command(command)
+    
+    def process_command(self, command: str):
+        parts = command.split()
+        if not parts:
+            return
+        
+        cmd = parts[0].lower()
+        try:
+            if cmd == "help":
+                self.log.write_line("Available commands: help, info, clear, date, theme [cyan/magenta], parse [file], encrypt [cipher key], quality [bitstream]")
+            elif cmd == "info":
+                self.log.write_line("Project Chimera: Immersive Web Terminal by DeMoD LLC")
+            elif cmd == "clear":
+                self.log.clear()
+                self.greet()
+            elif cmd == "date":
+                self.log.write_line(str(datetime.datetime.now()))
+            elif cmd == "theme":
+                if len(parts) > 1 and parts[1] == "magenta":
+                    self.app.styles.color = "#ff00ff"
+                    self.log.write_line("Theme switched to magenta.")
+                else:
+                    self.app.styles.color = "#00ffff"
+                    self.log.write_line("Theme switched to cyan.")
+            elif cmd == "parse":
+                if len(parts) > 1:
+                    bp = BinaryParser()
+                    bitstream = bp.parse(parts[1])
+                    self.log.write_line(f"Bitstream (first 100): {bitstream[:100]}...")
+            elif cmd == "encrypt":
+                if len(parts) > 2:
+                    cm = CipherModule()
+                    encrypted = cm.encrypt("01010101", parts[1], parts[2])  # Example
+                    self.log.write_line(f"Encrypted: {encrypted[:100]}...")
+            elif cmd == "quality":
+                if len(parts) > 1:
+                    valid = QualityChecker.validate_parity(parts[1])
+                    self.log.write_line(f"Parity valid: {valid}")
+                    corrupted, detected = QualityChecker.simulate_corruption(parts[1])
+                    self.log.write_line(f"Simulated corruption detected: {detected}")
+            else:
+                self.log.write_line("Unknown command. Type 'help' for list.")
+        except (ValueError, FileNotFoundError, OSError) as e:
+            self.log.write_line(f"Error: {str(e)}")
+    
+    def on_key(self, event: Key) -> None:
+        if event.key == "escape":
+            self.app.exit()
+
+if __name__ == "__main__":
+    app = ResistanceTUI()
+    app.run()
+```
+
+### scripts/resistance_cli.sh
+```
+#!/bin/bash
+
+# xAI Artifact: Generated with Grok by xAI
+# Made by DeMoD LLC with Grok 4
+# Bash CLI for installing and starting the Resistance Storage Project.
+# Usage: ./resistance_cli.sh [install|start|help]
+# - install: Sets up the project (venv, deps, extract files from README.md).
+# - start: Activates venv and runs the TUI (python tui.py).
+# - help: Shows this message.
+# Assumes Python 3.8+ and README.md with embedded code in the current dir.
+
+set -e  # Exit on error
+
+PROJECT_DIR="$(pwd)/resistance_storage"
+VENV_DIR="$PROJECT_DIR/venv"
+README_FILE="$(pwd)/README.md"  # Path to README.md
+
+# Function to extract code from README.md using awk
+extract_code() {
+    local filename=$1
+    awk "/### $filename/{getline; while (\$0 !~ /^$/) { if (\$0 ~ /^```(python|bash)/) { getline; while (\$0 !~ /^```/) { print \$0; getline; } } else { getline; } } }" "$README_FILE" > "$filename"
+    if [[ "$filename" == *.sh ]]; then
+        chmod +x "$filename"
+    fi
+}
+
+# Check if README.md exists
+if [ ! -f "$README_FILE" ]; then
+    echo "Error: $README_FILE not found. Please ensure the README.md with embedded code is available."
+    exit 1
+fi
+
+# CLI logic
+case "$1" in
+    install)
+        echo "Installing Resistance Storage Project..."
+        
+        # Create project directory if not exists
+        mkdir -p "$PROJECT_DIR"
+        cd "$PROJECT_DIR"
+        
+        # Create virtual environment
+        python3 -m venv "$VENV_DIR"
+        
+        # Activate venv
+        source "$VENV_DIR/bin/activate"
+        
+        # Install dependencies
+        pip install textual
+        
+        # Extract Python files
+        extract_code "binary_parser.py"
+        extract_code "cipher.py"
+        extract_code "quality_check.py"
+        extract_code "tui.py"
+        # Extract others if added
+        
+        # Validate extracted files
+        for file in binary_parser.py cipher.py quality_check.py tui.py; do
+            if [ ! -s "$file" ]; then
+                echo "Error: Failed to extract $file from README.md"
+                exit 1
+            fi
+        done
+        
+        echo "Installation complete! Use './resistance_cli.sh start' to run the TUI."
+        ;;
+    
+    start)
+        if [ ! -d "$VENV_DIR" ]; then
+            echo "Error: Project not installed. Run './resistance_cli.sh install' first."
+            exit 1
+        fi
+        
+        cd "$PROJECT_DIR"
+        source "$VENV_DIR/bin/activate"
+        python tui.py
+        ;;
+    
+    help)
+        echo "Usage: ./resistance_cli.sh [install|start|help]"
+        echo "  install: Set up the project and dependencies."
+        echo "  start: Activate venv and run the TUI."
+        echo "  help: Show this message."
+        ;;
+    
+    *)
+        echo "Invalid command. Use './resistance_cli.sh help' for usage."
+        exit 1
+        ;;
+esac
+```
