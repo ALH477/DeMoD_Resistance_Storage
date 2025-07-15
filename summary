@@ -1,0 +1,11 @@
+Resistance-Based Data Storage for Music
+This project stores digital music files physically using electrical resistance in circuits. Binary data from music files (e.g., WAV) is encoded into resistance levels—low for '1', high for '0'—in a circuit powered and read via USB. It’s durable against EMPs or magnetic interference, suited for archiving, but less dense than modern storage like SSDs.
+How It Works
+
+Encoding: Music data is turned into a binary stream, mapped to resistance values. Voltage changes are measured to read it back, with error correction (Hamming parity) to fix mistakes.
+Hardware: Scripts generate a PCB (KiCad) or ASIC (Verilog) to hold the encoded data physically.
+Software: Python tools parse files (WAV, TXT, BIN), add error checks, and offer basic encryption (Caesar, Vigenère). A text interface (Textual library) controls it.
+Setup: A Bash script installs and runs it on Linux, macOS, or Windows (via Git Bash/WSL).
+
+Strengths & Limits
+It’s a novel, physical storage method that’s tough against environmental damage but can’t match the capacity of flash drives or hard disks. It shows off skills in coding (front-end and back-end), hardware integration, and cross-platform design. Built by DeMoD LLC with Grok 4’s help.
